@@ -1,0 +1,79 @@
+#!/bin/sh
+
+# FIXME this gives some odd results
+# try https://gist.github.com/MicahElliott/719710#gistcomment-615676
+rgb2tput() {
+    local hex r g b
+    hex="${1}"
+    r=$(printf '0x%0.2s' "$hex")
+    g=$(printf '0x%0.2s' ${hex#??})
+    b=$(printf '0x%0.2s' ${hex#????})
+    printf '%03d' "$(( (r<75?0:(r-35)/40)*6*6 +
+                       (g<75?0:(g-35)/40)*6   +
+                       (b<75?0:(b-35)/40)     + 16 ))"
+}
+
+withcol() {
+    local escapes reset
+    escapes=''
+    reset="$(tput sgr0)"
+    while getopts "sf:b:a:" arg; do
+        case "$arg" in
+            f) escapes="${escapes}$(tput setaf $(rgb2tput "${OPTARG}"))" ;; # foreground
+            b) escapes="${escapes}$(tput setab $(rgb2tput "${OPTARG}"))" ;; # background
+            a) case "${OPTARG}" in
+                    bold) escapes="${escapes}$(tput bold)" ;; # bold
+                    ul) escapes="${escapes}$(tput smul)" ;; # underline
+                    rev) escapes="${escapes}$(tput rev)" ;; # reverse video
+                    blink) escapes="${escapes}$(tput blink)" ;; # blinking
+                    invis) escapes="${escapes}$(tput invis)" ;; # invisible text
+                    so) escapes="${escapes}$(tput smso)" ;; # standout mode
+                    ul) escapes="${escapes}$(tput smul)" ;;
+                    *) ;;
+                esac
+                ;;
+            s) reset='' ;;
+            *) ;;
+        esac
+    done
+    shift $(expr $OPTIND - 1)
+    if [ "$#" -gt 0 ]; then
+        text="${1}"
+        shift
+    else
+        text=''
+    fi
+
+    # output colorized, then clear attributes
+    echo "$@" "${escapes}${text}${reset}"
+}
+
+withaf() {
+    local fg
+    fg="${1}"
+    shift
+    withcol -f "${fg}" -- "$@"
+}
+
+nocol() {
+    tput sgr0
+}
+
+if [ $# -ne 0 ]; then
+    case "${1}" in
+        test)
+            echo "Colors: $(tput colors)" >&2
+            # FIXME if more than 256, ask user if they want to see them
+            for i in $(seq 0 `expr $(tput colors) - 1`); do
+                echo -n "$(tput setaf $i)$(printf '%4s' $i)"
+            done
+            echo "$(tput sgr0)" >&2
+            ;;
+        code)
+            withcol -f"${2}" "$(rgb2tput "${2}") " -n
+            withcol -b"${2}" '   '
+            ;;
+        -*) withcol "$@" ;;
+        *) withaf "$@" ;;
+    esac
+fi
