@@ -1,34 +1,111 @@
 #!/bin/sh
 
-# FIXME this gives some odd results
-# try https://gist.github.com/MicahElliott/719710#gistcomment-615676
-rgb2tput() {
-    local hex r g b
-    hex="${1}"
-    r=$(printf '0x%0.2s' "$hex")
-    g=$(printf '0x%0.2s' ${hex#??})
-    b=$(printf '0x%0.2s' ${hex#????})
-    printf '%03d' "$(( (r<75?0:(r-35)/40)*6*6 +
-                       (g<75?0:(g-35)/40)*6   +
-                       (b<75?0:(b-35)/40)     + 16 ))"
+
+rgb2sgr() {
+    # Uses three different strategies to select the correct color from xterm256 color space.
+    # First, primary colors are selected out, then greyscale, then an RGB color cube.
+    # See https://github.com/chadj2/bash-ui/blob/master/COLORS.md#xterm-colorspaces
+    # for more information on this (quite strange) color encoding.
+
+    # Note that we allow colors to be specified as either full six-digit hexcodes
+    # or as three-digit hexcodes.
+    # The three-digit codes are equivalent to the six-digit codes obtained by
+    # multiplying each channel by 16.
+    # E.g. `70f` === `7000f0`.
+
+    # Known "primary" colors use the ansi16 subspace (codes 0-15).
+    # In general, these are of the form `[0d]{3}` regex for 0-7,
+    # and `[0f]{3}` regex for 8-15,
+    # but a handful don't follow this pattern.
+    # `00f` is blue (replacing `00d`)
+    # `eee` is xterm white (replacing `ddd`)
+    # `888` is bright black
+    # `55f` is bright blue (`00f` is used for blue)
+    # I retrieved these be aproximating the xterm colors listed at
+    # https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
+    # so that they could be produced with three-digit codes.
+    # When specifying a six-digit number, primaries are detected when
+    # the low nybble in each channel is `0`,
+    # but if the high nybble if `f`, then the low nybble is also allowed to be `f`
+    # without changing the color.
+
+    # Next up, if all channels are identical, the grey26 subspace is used.
+    # This is a 26-color greyscale space.
+
+    # If none of these methods work (which is the case for most hexcodes,
+    # though perhaps programmers will in practice tend to stay near ansi16),
+    # then we use rgb216, which is a 6x6x6 RGB color cube.
+    local rgb r g b
+    rgb="${1#'#'}"
+
+    case ${rgb} in
+        # allow three-digit color codes by multiplying each channel by 16
+        ???) rgb="$(echo "${rgb}" | sed 's/\(.\)/\10/g')" ;;
+        *) ;;
+    esac
+
+    if echo "${rgb}" | grep -qvi '^[0-9a-f]\{6\}$'; then
+        echo >&2 uh-oh
+        echo 256 # TODO an out-of-range code should be normal color???
+        return 1
+    fi
+
+    case "${rgb}" in
+        # if it's a known primary color, use colors 0-15
+        000000) echo 0 ;; # black
+        d00000) echo 1 ;; # red
+        00d000) echo 2 ;; # green
+        d0d000) echo 3 ;; # yellow
+        0000f0|0000ff) echo 4 ;; # blue
+        d000d0) echo 5 ;; # magenta
+        00d0d0) echo 6 ;; # cyan
+        e0e0e0) echo 7 ;; # white
+        808080) echo 8 ;; # bright black
+        f00000|ff0000) echo 9 ;; # bright red
+        00f000|00ff00) echo 10 ;; # bright green
+        f0f000|ffff00) echo 11 ;; # bright yellow
+        5050f0|5050ff) echo 12 ;; # bright blue
+        f000f0|ff00ff) echo 13 ;; # bright magenta
+        00f0f0|00ffff) echo 14 ;; # bright cyan
+        f0f0f0|ffffff) echo 15 ;; # bright white
+        *)
+            # extract R, G, and B channels
+            r=$(printf '%d' $(printf '0x%0.2s' "$rgb"))
+            g=$(printf '%d' $(printf '0x%0.2s' ${rgb#??}))
+            b=$(printf '%d' $(printf '0x%0.2s' ${rgb#????}))
+
+            if [ "$r" -eq "$g" -a "$g" -eq "$b" ]; then
+            # if r = g = b, use grey26
+                echo $(expr "$r" '*' 25 / 256 + 231)
+            else
+            # if all else failed, use rgb216
+                # convert from 0-255 into 0-5 (approximate)
+                r=$(expr "$r" '*' 6 / 256)
+                g=$(expr "$g" '*' 6 / 256)
+                b=$(expr "$b" '*' 6 / 256)
+                # color cube transformation
+                echo $(expr 36 '*' "$r" + 6 '*' "$g" + "$b" + 16)
+            fi
+            ;;
+    esac
 }
 
 withcol() {
     local escapes reset
     escapes=''
-    reset="$(tput sgr0)"
+    reset="sgr0"
     while getopts "sf:b:a:" arg; do
         case "$arg" in
-            f) escapes="${escapes}$(tput setaf $(rgb2tput "${OPTARG}"))" ;; # foreground
-            b) escapes="${escapes}$(tput setab $(rgb2tput "${OPTARG}"))" ;; # background
+            f) escapes="${escapes} setaf $(rgb2sgr "${OPTARG}")" ;; # foreground
+            b) escapes="${escapes} setab $(rgb2sgr "${OPTARG}")" ;; # background
             a) case "${OPTARG}" in
-                    bold) escapes="${escapes}$(tput bold)" ;; # bold
-                    ul) escapes="${escapes}$(tput smul)" ;; # underline
-                    rev) escapes="${escapes}$(tput rev)" ;; # reverse video
-                    blink) escapes="${escapes}$(tput blink)" ;; # blinking
-                    invis) escapes="${escapes}$(tput invis)" ;; # invisible text
-                    so) escapes="${escapes}$(tput smso)" ;; # standout mode
-                    ul) escapes="${escapes}$(tput smul)" ;;
+                    bold) escapes="${escapes} bold" ;; # bold
+                    ul) escapes="${escapes} smul" ;; # underline
+                    rev) escapes="${escapes} rev" ;; # reverse video
+                    blink) escapes="${escapes} blink" ;; # blinking
+                    invis) escapes="${escapes} invis" ;; # invisible text
+                    so) escapes="${escapes} smso" ;; # standout mode
+                    ul) escapes="${escapes} smul" ;;
                     *) ;;
                 esac
                 ;;
@@ -37,15 +114,11 @@ withcol() {
         esac
     done
     shift $(expr $OPTIND - 1)
-    if [ "$#" -gt 0 ]; then
-        text="${1}"
-        shift
-    else
-        text=''
-    fi
 
     # output colorized, then clear attributes
-    echo "$@" "${escapes}${text}${reset}"
+    [ -n "${escapes}" ] && tput ${escapes}
+    echo -n "$@"
+    [ -n "${reset}" ] && tput ${reset}
 }
 
 withaf() {
@@ -65,15 +138,16 @@ if [ $# -ne 0 ]; then
             echo "Colors: $(tput colors)" >&2
             # FIXME if more than 256, ask user if they want to see them
             for i in $(seq 0 `expr $(tput colors) - 1`); do
-                echo -n "$(tput setaf $i)$(printf '%4s' $i)"
+                tput setaf $i
+                printf '%4d' $i
             done
-            echo "$(tput sgr0)" >&2
+            tput sgr0
+            echo ''
             ;;
         code)
-            withcol -f"${2}" "$(rgb2tput "${2}") " -n
-            withcol -b"${2}" '   '
+            echo "$(withcol -f"${2}" $(rgb2sgr "${2}")) $(withcol -b"${2}" '   ')"
             ;;
-        -*) withcol "$@" ;;
-        *) withaf "$@" ;;
+        -*) withcol "$@"; echo '' ;;
+        *) withaf "$@"; echo '' ;;
     esac
 fi
