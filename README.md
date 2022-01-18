@@ -6,6 +6,10 @@ Handy functions for colorizing terminal output.
 
 Download [`technicolor`](technicolor) and put in on your path.
 
+```
+wget https://raw.githubusercontent.com/edemko/technicolor/master/technicolor -O /bin/technicolor
+```
+
 It's a Bourne Shell script, so it should require nothing special on Unixen and Unix-alikes.
 
 ## Usage
@@ -54,7 +58,7 @@ Or it can be sourced
 ## Specifying Colors
 
 Terminals may not (tend not to?) support 24-bit color.
-In fact, the ones I use commonly come with at best 256 colors like it was 1992.
+In fact, the ones I use commonly come with at best 256 colors like it was 1995.
 Nevertheless, `technicolor` accepts hexcodes, and attempts to select a nearby
   terminal color.
 
@@ -77,10 +81,10 @@ See [bash-ui](https://github.com/chadj2/bash-ui/blob/master/COLORS.md#xterm-colo
 for more information on this color encoding.
 
 Known "primary" colors use the ansi16 subspace (codes 0-15).
-In general, these are of the form `[0d]{3}` regex for 0-7,
-and `[0f]{3}` regex for 8-15,
-but a handful don't follow this pattern (see list below).
-I retrieved these be approximating the xterm colors listed on
+In general, these match the regex `[0d]{3}` for 0-7,
+and `[0f]{3}` for 8-15,
+but a handful don't follow this pattern (see list by).
+I retrieved these by approximating the xterm colors listed on
 [Wikipedia](https://en.wikipedia.org/wiki/ANSI_escape_code#Colors)
 so that they could be produced with three-digit codes.
 When specifying a six-digit number, primaries are detected when
@@ -121,3 +125,8 @@ That way, one could write `green` to specify colors like "the user's favorite gr
 At the moment, I am only handling 256-color terminals.
 Support for 16-color terminals could be added relatively easily.
 I don't currently have a good handle on the capabilities for true color (16 million colors).
+
+### True Color Notes
+
+True color seems to be as easy as `echo -e "\e[38;2;${r};${g};${b}m"` (foreground) and `echo -e "\e[48;2;${r};${g};${b}m"` background.
+The real question is how to determine it per-terminal rather than setting it for the box (which may be connected to by an unexpected terminal)?
