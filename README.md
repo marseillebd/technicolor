@@ -7,7 +7,7 @@ Handy functions for colorizing terminal output.
 Download [`technicolor`](technicolor) and put in on your path.
 
 ```
-wget https://raw.githubusercontent.com/edemko/technicolor/master/technicolor -O /bin/technicolor
+wget https://raw.githubusercontent.com/marseillebd/technicolor/master/technicolor -O /bin/technicolor
 ```
 
 It's a Bourne Shell script, so it should require nothing special on Unixen and Unix-alikes.
